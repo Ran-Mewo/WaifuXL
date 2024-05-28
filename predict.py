@@ -39,7 +39,7 @@ class Predictor(BasePredictor):
             self,
             image: Path = Input(description="Input image"),
             scale: int = Input(
-                description="Factor to scale the image by", ge=0, default=2
+                description="How many times to repeat the super resolution", ge=0, default=1
             ),
             format: str = Input(
                 description="Output type of the image", default="PNG"
