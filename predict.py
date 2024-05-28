@@ -19,7 +19,7 @@ class Predictor(BasePredictor):
     def predict(
             self,
             image: Path = Input(description="Input image"),
-            scale: float = Input(
+            scale: int = Input(
                 description="Factor to scale the image by", ge=0, default=2
             ),
             format: str = Input(
