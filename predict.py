@@ -1,6 +1,7 @@
 # Prediction interface for Cog ⚙️
 # https://cog.run/python
 import io
+import sys
 import tempfile
 
 from PIL import Image
@@ -13,7 +14,25 @@ class Predictor(BasePredictor):
 
     def setup(self) -> None:
         """Load the model into memory to make running multiple predictions efficient"""
-        self.model = ort.InferenceSession("./public/models/superRes.onnx", providers=['CUDAExecutionProvider'])
+        if 'CUDAExecutionProvider' not in ort.get_available_providers():
+            print("CUDAExecutionProvider is not available")
+            sys.exit()
+
+        ses_opt = ort.SessionOptions()
+
+        # Available levels are 'DEFAULT', 'DISABLE_ALL', 'ENABLE_BASIC', and 'ENABLE_ALL'
+        ses_opt.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+        # Enable or disable the memory arena. Default is True.
+        ses_opt.enable_cpu_mem_arena = True
+
+        # Enable or Disable the memory pattern optimization. Default is True.
+        ses_opt.enable_mem_pattern = True
+
+        # Available modes are 'SEQUENTIAL' and 'PARALLEL'
+        ses_opt.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+
+        self.model = ort.InferenceSession("./public/models/superRes.onnx", ses_opt, providers=['CUDAExecutionProvider'])
 
 
     def predict(
@@ -79,43 +98,44 @@ def multiUpscale(model, imageArray, upscaleFactor, outputType = 'PNG'):
 
 
 def upscaleFrame(model, imageArray):
-    CHUNK_SIZE = 1024
-    PAD_SIZE = 32
-
-    inImgW = imageArray.shape[0]
-    inImgH = imageArray.shape[1]
-    outImgW = inImgW * 2
-    outImgH = inImgH * 2
-    nChunksW = int(np.ceil(inImgW / CHUNK_SIZE))
-    nChunksH = int(np.ceil(inImgH / CHUNK_SIZE))
-    chunkW = int(np.floor(inImgW / nChunksW))
-    chunkH = int(np.floor(inImgH / nChunksH))
-
-    outArr = np.zeros((outImgW, outImgH, 4), dtype=np.uint8)
-
-    for i in range(int(nChunksH)):
-        for j in range(int(nChunksW)):
-            x = j * chunkW
-            y = i * chunkH
-
-            yStart = max(0, y - PAD_SIZE)
-            xStart = max(0, x - PAD_SIZE)
-            inH = inImgH - yStart if yStart + chunkH + PAD_SIZE * 2 > inImgH else chunkH + PAD_SIZE * 2
-            outH = 2 * (min(inImgH, y + chunkH) - y)
-            inW = inImgW - xStart if xStart + chunkW + PAD_SIZE * 2 > inImgW else chunkW + PAD_SIZE * 2
-            outW = 2 * (min(inImgW, x + chunkW) - x)
-
-            inSlice = imageArray[xStart:xStart+inW, yStart:yStart+inH, :4]
-            subArr = np.zeros(inSlice.shape, dtype=np.uint8)
-            np.copyto(subArr, inSlice)
-
-            chunkData = runSuperRes(model, subArr)
-            chunkArr = np.array(chunkData.data).reshape(chunkData.shape)
-            chunkSlice = chunkArr[(x - xStart) * 2 : (x - xStart) * 2 + outW, (y - yStart) * 2 : (y - yStart) * 2 + outH, :4]
-            outSlice = outArr[x * 2 : x * 2 + outW, y * 2 : y * 2 + outH, :4]
-            np.copyto(outSlice, chunkSlice)
-
-    return outArr
+    # CHUNK_SIZE = 1024
+    # PAD_SIZE = 32
+    #
+    # inImgW = imageArray.shape[0]
+    # inImgH = imageArray.shape[1]
+    # outImgW = inImgW * 2
+    # outImgH = inImgH * 2
+    # nChunksW = int(np.ceil(inImgW / CHUNK_SIZE))
+    # nChunksH = int(np.ceil(inImgH / CHUNK_SIZE))
+    # chunkW = int(np.floor(inImgW / nChunksW))
+    # chunkH = int(np.floor(inImgH / nChunksH))
+    #
+    # outArr = np.zeros((outImgW, outImgH, 4), dtype=np.uint8)
+    #
+    # for i in range(int(nChunksH)):
+    #     for j in range(int(nChunksW)):
+    #         x = j * chunkW
+    #         y = i * chunkH
+    #
+    #         yStart = max(0, y - PAD_SIZE)
+    #         xStart = max(0, x - PAD_SIZE)
+    #         inH = inImgH - yStart if yStart + chunkH + PAD_SIZE * 2 > inImgH else chunkH + PAD_SIZE * 2
+    #         outH = 2 * (min(inImgH, y + chunkH) - y)
+    #         inW = inImgW - xStart if xStart + chunkW + PAD_SIZE * 2 > inImgW else chunkW + PAD_SIZE * 2
+    #         outW = 2 * (min(inImgW, x + chunkW) - x)
+    #
+    #         inSlice = imageArray[xStart:xStart+inW, yStart:yStart+inH, :4]
+    #         subArr = np.zeros(inSlice.shape, dtype=np.uint8)
+    #         np.copyto(subArr, inSlice)
+    #
+    #         chunkData = runSuperRes(model, subArr)
+    #         chunkArr = np.array(chunkData.data).reshape(chunkData.shape)
+    #         chunkSlice = chunkArr[(x - xStart) * 2 : (x - xStart) * 2 + outW, (y - yStart) * 2 : (y - yStart) * 2 + outH, :4]
+    #         outSlice = outArr[x * 2 : x * 2 + outW, y * 2 : y * 2 + outH, :4]
+    #         np.copyto(outSlice, chunkSlice)
+    #
+    # return outArr
+    return runSuperRes(model, imageArray)
 
 
 def imageNDarrayToBytes(outArr, outputType = 'PNG'):
